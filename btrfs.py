@@ -2,6 +2,7 @@ from construct import *
 import crc32c
 
 # TODO: verify that we do not use RAID0/5/6. RAID1 is OK
+# TODO: only CRC32 checksums
 
 SUPERBLOCK_MAGIC = b'_BHRfS_M'
 SUPERBLOCK_OFFSETS = [0x1_0000, 0x400_0000, 0x40_0000_0000, 0x4_0000_0000_0000]
@@ -213,6 +214,10 @@ FileExtentItem = Struct(
 	"disk_num_bytes" / If(this.type != FILE_EXTENT_INLINE, Int64ul),
 	"offset" / If(this.type != FILE_EXTENT_INLINE, Int64ul),
 	"num_bytes" / If(this.type != FILE_EXTENT_INLINE, Int64ul)
+	)
+
+CsumItem = Struct(
+	"csum" / GreedyRange(Int32ul)
 	)
 
 ExtentItem = Struct(
@@ -504,6 +509,13 @@ class Btrfs:
 					payload_data = self.dev[0].read(item.size)
 					payload = FileExtentItem.parse(payload_data)
 
+				elif(item.key.type == EXTENT_CSUM_KEY):
+					self.dev[0].seek(data_root + item.offset)
+					# Extent csum item uses GreedyBytes so we must pass correct
+					# amount of data.
+					payload_data = self.dev[0].read(item.size)
+					payload = CsumItem.parse(payload_data)
+
 				yield item, payload
 
 		else:
@@ -647,6 +659,97 @@ class Btrfs:
 					return inode_item, inode_payload
 
 
+	def read_parent_node(self, node_logical, key):
+
+		# Perform binary search in each node until found
+
+		node_addr = self.physical(node_logical)
+
+		self.dev[0].seek(node_addr[1])
+		node_header = Header.parse_stream(self.dev[0])
+
+		is_leaf = node_header.level == 0
+
+		if(is_leaf):
+			keyobjs = Item[node_header.nritems].parse_stream(self.dev[0])
+
+		else:
+			keyobjs = KeyPtr[node_header.nritems].parse_stream(self.dev[0])
+
+		lower = 0
+		upper = len(keyobjs) - 1
+
+		while True:
+			i = (lower + upper)//2
+
+			c = self.compare_keys(key, keyobjs[i].key)
+
+			if(c == 0):
+				if(is_leaf):
+					self.dev[0].seek(node_addr[1])
+					return self.dev[0].read(self.superblock.node_size)
+				else:
+					return self.read_parent_node(keyobjs[i].blockptr, key)
+
+			elif(lower == upper):
+				if(is_leaf): # Key not found
+					return None
+
+				else:
+					# keyobjs are KeyPtrs
+					if(i == 0 and c < 0): # Key not found
+						return None
+
+					if(c < 0):
+						if(i == 0):
+							return None
+
+						return self.read_parent_node(keyobjs[i-1].blockptr, key)
+
+					else:
+						return self.read_parent_node(keyobjs[i].blockptr, key)
+
+
+			elif(c < 0):
+				if(i == 0):
+					return None
+
+				upper = i - 1
+
+			else:
+				lower = i + 1
+
+	def find_checksums(self, logical_start, logical_end):
+
+		if(logical_start & 0xfff != 0):
+			raise Exception('logical_start not a multiple of 4096')
+
+		if(logical_end & 0xfff != 0):
+			raise Exception('logical_end not a multiple of 4096')
+
+		csums = []
+		current = logical_start
+
+		# TODO: improve performance
+		for item, payload in btrfs.find_all(btrfs.csum_tree.bytenr):
+			start = item.key.offset
+			end = start + 	(item.size//4) * 4096
+
+			while(current >= start and current < end):
+				pos = (current - start) // 4096
+				csums.append(payload.csum[pos])
+
+				current += 4096
+
+				if(current == logical_end):
+					break
+
+		if(current != logical_end):
+			raise Exception('Could not find checksums!')
+
+		return csums
+
+
 	def list_files(self):
 		for item, payload in self.find_all(self.fs_tree.bytenr):
 
@@ -772,6 +875,64 @@ if(__name__ == '__main__'):
 					      item.key.offset, item.key.objectid, payload.name))
 
 		if(args[0] == 'checksums'):
-			for item, payload in btrfs.find_all(btrfs.csum_tree):
-				print(item)
-				print(payload)
+			for item, payload in btrfs.find_all(btrfs.csum_tree.bytenr):
+#				print(item)
+				print('{} - {} 4k pages = {} bytes'.format(
+					item.key.offset, item.size//4, item.size//4*2**12))
+#				print(payload)
+
+		if(args[0] == 'verify'):
+			import crc32c
+
+			if(args[1] == 'file'):
+
+				path = args[2]
+				item, payload = btrfs.find_path(256, path.encode().split(b'/'))
+
+				extents = btrfs.find_all(btrfs.fs_tree.bytenr,
+				                         lambda key: key.objectid == item.key.objectid and
+				                                     key.type == EXTENT_DATA_KEY)
+
+				x = 0
+
+				for item, payload in extents:
+					if(item.key.offset != 0):
+						raise Exception('Missing extent data for file')
+
+					if(payload.compression != COMPRESS_NONE):
+						raise Exception('Extent is compressed which is not supported')
+
+					if(payload.type == FILE_EXTENT_INLINE):
+						# Read node header -> csum
+						extent_size = len(payload.data)
+
+						node_data = btrfs.read_parent_node(btrfs.fs_tree.bytenr, item.key)
+						csum = crc32c.crc32c(node_data[CSUM_SIZE:])
+						node_csum = Int32ul.parse(node_data[0:CSUM_SIZE])
+
+						if(csum != node_csum):
+							print('Checksum error, {} != {}'.format(
+								csum, node_csum))
+
+					elif(payload.type == FILE_EXTENT_REG):
+						extent_size = payload.disk_num_bytes
+						addr = btrfs.physical(payload.disk_bytenr, extent_size)
+
+						btrfs.dev[0].seek(addr[1])
+						data = btrfs.dev[0].read(extent_size)
+
+						# Verify this extent
+						for i in range(extent_size // 4096):
+							block = data[4096*i:4096*(i+1)]
+							block_csum = crc32c.crc32c(block)
+							extent_csum = btrfs.find_checksums(payload.disk_bytenr, payload.disk_bytenr + extent_size)[0]
+
+							if(block_csum != extent_csum):
+								print('Checksum error, {} != {}'.format(
+									block_csum, extent_csum))
+
+					else:
+						raise Exception('Invalid extent data type found!')
+
+
+					x += extent_size
