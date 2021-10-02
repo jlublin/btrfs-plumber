@@ -1,6 +1,8 @@
 from construct import *
 import crc32c
 
+# TODO: verify that we do not use RAID0/5/6. RAID1 is OK
+
 SUPERBLOCK_MAGIC = b'_BHRfS_M'
 SUPERBLOCK_OFFSETS = [0x1_0000, 0x400_0000, 0x40_0000_0000, 0x4_0000_0000_0000]
 CSUM_SIZE = 32
@@ -343,11 +345,16 @@ class Btrfs:
 		for cache_logical, chunk_size in self.chunk_tree_cache:
 			if(logical >= cache_logical and logical < cache_logical + chunk_size):
 
+#				print(logical, cache_logical, chunk_size)
+
 				if(logical + size > cache_logical + chunk_size):
 					raise Exception('Logical addressing does not fit in chunk')
 
-				return [x[1] + logical - cache_logical
-				        for x in self.chunk_tree_cache[(cache_logical, chunk_size)]]
+#				print(self.chunk_tree_cache[(cache_logical, chunk_size)])
+				m = { devid: x + logical - cache_logical
+				      for devid, x in self.chunk_tree_cache[(cache_logical, chunk_size)].items() }
+				return m
+
 
 		return KeyError('No such logical address found in chunk tree')
 
@@ -370,13 +377,15 @@ class Btrfs:
 				if(item.key.type != CHUNK_ITEM_KEY):
 					continue
 
-#				print(item)
 
 				self.dev[0].seek(data_root + item.offset)
 				chunk = Chunk.parse_stream(self.dev[0])
 
+#				print(item)
+#				print(chunk)
+
 				self.chunk_tree_cache[(item.key.offset, chunk.length)] = \
-					[(x.devid, x.offset) for x in chunk.stripes]
+					{x.devid: x.offset for x in chunk.stripes}
 
 		else:
 			key_ptrs = KeyPtr[chunk_root_header.nritems].parse_stream(self.dev[0])
@@ -386,11 +395,9 @@ class Btrfs:
 
 	def read_tree_roots(self):
 
-		# TODO: only FS for now
-
 		root_addr = self.physical(self.superblock.root)
 
-		self.dev[0].seek(root_addr[0])
+		self.dev[0].seek(root_addr[1])
 		root_tree_root_header = Header.parse_stream(self.dev[0])
 		data_root = self.dev[0].tell()
 
@@ -405,8 +412,6 @@ class Btrfs:
 
 			if(item.key.type == ROOT_ITEM_KEY and
 			   item.key.objectid == FS_TREE_OBJECTID):
-
-				# TODO: one per subvolume ??
 
 				self.dev[0].seek(data_root + item.offset)
 				root_item = RootItem.parse_stream(self.dev[0])
@@ -429,20 +434,26 @@ class Btrfs:
 
 				self.subvolume_trees[item.key.objectid] = root_item
 
-#				print(item)
-#				print(root_item)
-
 			elif(item.key.type == DIR_ITEM_KEY and
 			     item.key.objectid == ROOT_TREE_DIR_OBJECTID):
 
 				self.dev[0].seek(data_root + item.offset)
 				dir_item = DirItem.parse_stream(self.dev[0])
 
-#				print(item)
-#				print(dir_item)
+			elif(item.key.type == ROOT_ITEM_KEY and
+			     item.key.objectid == EXTENT_TREE_OBJECTID):
+
+				self.dev[0].seek(data_root + item.offset)
+				root_item = RootItem.parse_stream(self.dev[0])
+
+				self.extent_tree = root_item
 
 			else:
 				continue
+
+
+	def find_range(self, node_logical, key_start, key_end, filter= lambda x: True):
+		pass # TODO make find_all use this with full range?
 
 
 	def find_all(self, node_logical, filter=lambda x: True):
@@ -452,7 +463,7 @@ class Btrfs:
 
 		node_addr = self.physical(node_logical)
 
-		self.dev[0].seek(node_addr[0])
+		self.dev[0].seek(node_addr[1])
 		node_header = Header.parse_stream(self.dev[0])
 		data_root = self.dev[0].tell()
 
@@ -552,7 +563,7 @@ class Btrfs:
 
 		node_addr = self.physical(node_logical)
 
-		self.dev[0].seek(node_addr[0])
+		self.dev[0].seek(node_addr[1])
 		node_header = Header.parse_stream(self.dev[0])
 		data_root = self.dev[0].tell()
 
@@ -712,6 +723,7 @@ if(__name__ == '__main__'):
 					for item, payload in extents:
 						print(item)
 						print(payload)
+						print(btrfs.physical(payload.disk_bytenr))
 
 				elif(args[2] == 'data'):
 					x = 0
@@ -728,19 +740,24 @@ if(__name__ == '__main__'):
 							extent_size = len(payload.data)
 
 						elif(payload.type == FILE_EXTENT_REG):
-							addr = btrfs.physical(payload.disk_bytenr)
 							extent_size = payload.num_bytes
+							len = min(extent_size, size-x)
+							addr = btrfs.physical(payload.disk_bytenr, len)
 
-							btrfs.dev[0].seek(addr[0])
-							data = btrfs.dev[0].read(extent_size)
+							btrfs.dev[0].seek(addr[1])
+							data = btrfs.dev[0].read(len)
 							l = sys.stdout.buffer.write(data)
-							if(l != extent_size):
+							if(l != min(extent_size, size-x)):
 								raise Exception('!!!!!')
 
 						else:
 							raise Exception('Invalid extent data type found!')
 
 						x += extent_size
+
+
+		if(args[0] == 'chunks'):
+			print(btrfs.chunk_tree_cache)
 
 
 		if(args[0] == 'files'):
@@ -753,3 +770,8 @@ if(__name__ == '__main__'):
 					lambda key: key.type == ROOT_REF_KEY):
 					print('Subvolume {} (parent: {}): {}'.format(
 					      item.key.offset, item.key.objectid, payload.name))
+
+		if(args[0] == 'checksums'):
+			for item, payload in btrfs.find_all(btrfs.csum_tree):
+				print(item)
+				print(payload)
