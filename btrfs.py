@@ -418,40 +418,27 @@ class Btrfs:
 			if(item.key.type == ROOT_ITEM_KEY and
 			   item.key.objectid == FS_TREE_OBJECTID):
 
-				self.dev[0].seek(data_root + item.offset)
-				root_item = RootItem.parse_stream(self.dev[0])
-
-				self.fs_tree = root_item
+				self.fs_tree = self.parse_item(item, data_root)
 
 			elif(item.key.type == ROOT_ITEM_KEY and
 			     item.key.objectid == CSUM_TREE_OBJECTID):
 
-				self.dev[0].seek(data_root + item.offset)
-				root_item = RootItem.parse_stream(self.dev[0])
-
-				self.csum_tree = root_item
+				self.csum_tree = self.parse_item(item, data_root)
 
 			elif(item.key.type == ROOT_ITEM_KEY and
 			     item.key.objectid >= 256):
 
-				self.dev[0].seek(data_root + item.offset)
-				root_item = RootItem.parse_stream(self.dev[0])
-
-				self.subvolume_trees[item.key.objectid] = root_item
+				self.subvolume_trees[item.key.objectid] = self.parse_item(item, data_root)
 
 			elif(item.key.type == DIR_ITEM_KEY and
 			     item.key.objectid == ROOT_TREE_DIR_OBJECTID):
 
-				self.dev[0].seek(data_root + item.offset)
-				dir_item = DirItem.parse_stream(self.dev[0])
+				dir_item = self.parse_item(item, data_root)
 
 			elif(item.key.type == ROOT_ITEM_KEY and
 			     item.key.objectid == EXTENT_TREE_OBJECTID):
 
-				self.dev[0].seek(data_root + item.offset)
-				root_item = RootItem.parse_stream(self.dev[0])
-
-				self.extent_tree = root_item
+				self.extent_tree = self.parse_item(item, data_root)
 
 			else:
 				continue
@@ -480,41 +467,7 @@ class Btrfs:
 				if(not filter(item.key)):
 					continue
 
-				payload = None
-
-				if(item.key.type == DIR_ITEM_KEY):
-					self.dev[0].seek(data_root + item.offset)
-					payload = DirItem.parse_stream(self.dev[0])
-
-				if(item.key.type == DIR_INDEX_KEY):
-					self.dev[0].seek(data_root + item.offset)
-					payload = DirIndex.parse_stream(self.dev[0])
-
-				elif(item.key.type == INODE_REF_KEY):
-					self.dev[0].seek(data_root + item.offset)
-					payload = InodeRef.parse_stream(self.dev[0])
-
-				elif(item.key.type == ROOT_REF_KEY):
-					self.dev[0].seek(data_root + item.offset)
-					payload = RootRef.parse_stream(self.dev[0])
-
-				elif(item.key.type == ROOT_BACKREF_KEY):
-					self.dev[0].seek(data_root + item.offset)
-					payload = RootBackRef.parse_stream(self.dev[0])
-
-				elif(item.key.type == EXTENT_DATA_KEY):
-					self.dev[0].seek(data_root + item.offset)
-					# Extent data item uses GreedyBytes so we must pass correct
-					# amount of data.
-					payload_data = self.dev[0].read(item.size)
-					payload = FileExtentItem.parse(payload_data)
-
-				elif(item.key.type == EXTENT_CSUM_KEY):
-					self.dev[0].seek(data_root + item.offset)
-					# Extent csum item uses GreedyBytes so we must pass correct
-					# amount of data.
-					payload_data = self.dev[0].read(item.size)
-					payload = CsumItem.parse(payload_data)
+				payload = self.parse_item(item, data_root)
 
 				yield item, payload
 
@@ -528,6 +481,9 @@ class Btrfs:
 
 		if(item.key.type == DIR_ITEM_KEY):
 			type = DirItem
+
+		elif(item.key.type == DIR_INDEX_KEY):
+			type = DirIndex
 
 		elif(item.key.type == INODE_REF_KEY):
 			type = InodeRef
@@ -544,12 +500,19 @@ class Btrfs:
 		elif(item.key.type == ROOT_BACKREF_KEY):
 			type = RootBackRef
 
+		elif(item.key.type == EXTENT_DATA_KEY):
+			type = FileExtentItem
+
+		elif(item.key.type == EXTENT_CSUM_KEY):
+			type = CsumItem
+
 		else:
 			raise Exception('Unknown type {} passed to parse_item()'.format(
 				item.key.type))
 
 		self.dev[0].seek(data_root + item.offset)
-		payload = type.parse_stream(self.dev[0])
+		payload_data = self.dev[0].read(item.size)
+		payload = type.parse(payload_data)
 
 		return payload
 
@@ -767,8 +730,8 @@ class Btrfs:
 
 				print('Index:', payload.name)
 
-			if(item.key.type == INODE_ITEM_KEY):
-				print('Inode item:', payload)
+#			if(item.key.type == INODE_ITEM_KEY):
+#				print('Inode item:', payload)
 
 			if(item.key.type == INODE_REF_KEY):
 				print('Inode ref:', payload.name)
