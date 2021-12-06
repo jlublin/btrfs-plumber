@@ -913,27 +913,31 @@ class Btrfs:
 
 
 	def list_files(self):
-		for item, payload in self.find_all(self.fs_tree.bytenr):
+
+		node = BtrfsNode(btrfs, btrfs.fs_tree.bytenr)
+		items = node.find_all()
+
+		for item in node.find_all():
 
 			print('{}\t{}\t{}'.format(item.key.objectid, item.key.type, item.key.offset))
 
 			if(item.key.type == DIR_ITEM_KEY):
 
-				if(payload.type == FT_REG_FILE):
-					print('Is file', payload.name, item.key.objectid)
+				if(item.data.type == FT_REG_FILE):
+					print('Is file', item.data.name, item.key.objectid)
 
-				elif(payload.type == FT_DIR):
-					print('Dir:', payload.name, item.key.objectid)
+				elif(item.data.type == FT_DIR):
+					print('Dir:', item.data.name, item.key.objectid)
 
 			if(item.key.type == DIR_INDEX_KEY):
 
-				print('Index:', payload.name)
+				print('Index:', item.data.name)
 
 #			if(item.key.type == INODE_ITEM_KEY):
-#				print('Inode item:', payload)
+#				print('Inode item:', item.data)
 
 			if(item.key.type == INODE_REF_KEY):
-				print('Inode ref:', payload.name)
+				print('Inode ref:', item.data.name)
 
 
 if(__name__ == '__main__'):
