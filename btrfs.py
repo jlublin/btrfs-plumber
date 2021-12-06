@@ -1,3 +1,4 @@
+import io
 from construct import *
 import crc32c
 
@@ -292,6 +293,233 @@ class LogicalMap:
 		self.maps = maps
 
 
+class BtrfsItem:
+
+	def __init__(self, keyobj, data, node, index):
+
+		self.key = keyobj.key
+		self.offset = keyobj.offset
+		self.size = keyobj.size
+
+		self.item = keyobj
+		self.data = data
+
+		self.node = node
+		self.index = index
+
+
+	def next(self):
+		return self.node.next(self.index)
+
+
+class BtrfsNode:
+
+	def __init__(self, fs, logical, parent=None, index=None):
+
+
+		self.fs = fs
+		self.data = self.fs.read_node(logical)
+		self.logical = logical
+		self.parent = parent
+		self.index = index
+
+		stream = io.BytesIO(self.data)
+
+		self.header = Header.parse_stream(stream)
+
+		self.data_root = stream.tell() + self.fs.physical(self.logical)[1] # TODO: parse from self.data
+		self.num_items = self.header.nritems
+
+		self.is_leaf = (self.header.level == 0)
+
+		# keyobjs may be either items (leafs) or keyptrs (internal nodes)
+		if(self.is_leaf):
+			self.keyobjs = Item[self.num_items].parse_stream(stream)
+
+		else:
+			self.keyobjs = KeyPtr[self.num_items].parse_stream(stream)
+
+		# Parse items? No, takes unessecary time, store data
+
+
+	def first_key(self):
+		if(self.is_leaf):
+			keyobj = self.keyobjs[0]
+			data = self.fs.parse_item(keyobj, self.data_root)
+			return BtrfsItem(keyobj, data, self, 0)
+
+		else:
+			node = BtrfsNode(self.fs, self.keyobjs[0].blockptr, self, 0)
+			return node.first_key()
+
+
+	def find(self, key):
+
+		# Binary search in node keys
+		lower = 0
+		upper = len(self.keyobjs) - 1
+
+		while True:
+			i = (lower + upper)//2
+
+			c = compare_keys(key, self.keyobjs[i].key)
+
+			if(c == 0):
+				if(self.is_leaf):
+					keyobj = self.keyobjs[i]
+					data = self.fs.parse_item(keyobj, self.data_root)
+					return BtrfsItem(keyobj, data, self, i)
+				else:
+					node = BtrfsNode(self.fs, self.keyobjs[i].blockptr, self, i)
+					return node.find(key)
+
+			elif(lower == upper):
+				if(self.is_leaf): # Key not found
+					return None
+
+				else:
+					# keyobjs are KeyPtrs
+					if(i == 0 and c < 0): # Key not found
+						return None
+
+					if(c < 0):
+						if(i == 0):
+							return None
+
+						node = BtrfsNode(self.fs, self.keyobjs[i-1].blockptr, self, i-1)
+						return node.find(key)
+
+
+					else:
+						node = BtrfsNode(self.fs, self.keyobjs[i].blockptr, self, i)
+						return node.find(key)
+
+			elif(c < 0):
+				if(i == 0):
+					return None
+
+				upper = i - 1
+
+			else:
+				lower = i + 1
+
+
+	def find_objectid(self, objectid):
+		# Return first objectid
+
+		# Binary search in node keys
+		lower = 0
+		upper = len(self.keyobjs) - 1
+
+		while True:
+			i = (lower + upper)//2
+
+			c = objectid - self.keyobjs[i].key.objectid
+
+			if(c == 0):
+				if(self.is_leaf):
+					# Look left, we want the first objectid
+					while(True):
+						if(i == 0):
+							break
+
+						if(self.keyobjs[i-1].key.objectid == objectid):
+							i -= 1
+						else:
+							break
+
+
+					keyobj = self.keyobjs[i]
+					data = self.fs.parse_item(keyobj, self.data_root)
+					return BtrfsItem(keyobj, data, self, i)
+
+				else:
+					# Look left, we want the first objectid
+					while True:
+						if(i == 0):
+							break
+
+						if(self.keyobjs[i-1].key.objectid == objectid):
+							i -= 1
+						else:
+							break
+
+					node = BtrfsNode(self.fs, self.keyobjs[i].blockptr, self, i)
+					return node.find_objectid(objectid)
+
+			elif(lower == upper):
+				if(self.is_leaf): # Key not found
+					return None
+
+				else:
+					# keyobjs are KeyPtrs
+					if(i == 0 and c < 0): # Key not found
+						return None
+
+					if(c < 0):
+						if(i == 0):
+							return None
+
+						node = BtrfsNode(self.fs, self.keyobjs[i-1].blockptr, self, i-1)
+						return node.find_objectid(objectid)
+
+
+					else:
+						node = BtrfsNode(self.fs, self.keyobjs[i].blockptr, self, i)
+						return node.find_objectid(objectid)
+
+			elif(c < 0):
+				if(i == 0):
+					return None
+
+				upper = i - 1
+
+			else:
+				lower = i + 1
+
+
+	def find_all_objectid(self, objectid):
+
+		item = self.find_objectid(objectid)
+
+		if(item):
+			yield item
+		else:
+			return
+
+		while True:
+			item = item.next()
+			if(item and item.key.objectid == objectid):
+				yield item
+			else:
+				return
+
+
+	def next(self, index): # TODO: add filtering?
+
+		if(self.is_leaf):
+			if(index < self.num_items - 1):
+				keyobj = self.keyobjs[index+1]
+				data = self.fs.parse_item(keyobj, self.data_root)
+				return BtrfsItem(keyobj, data, self, index+1)
+
+			else:
+				if(not self.parent):
+					return None
+
+				return self.parent.next(self.index)
+
+		else:
+			if(index < self.num_items - 1):
+				node = BtrfsNode(self.fs, self.keyobjs[index+1].blockptr, self, index+1)
+				return node.first_key()
+
+			else:
+				if(not self.parent):
+					return None
+
+				self.parent.next(self.index)
+
 class Btrfs:
 
 	def __init__(self, devices):
@@ -301,6 +529,7 @@ class Btrfs:
 		self.dev = [open(dev, 'rb') for dev in devices]
 		self.dev[0].seek(SUPERBLOCK_OFFSETS[0])
 		self.superblock = Superblock.parse_stream(self.dev[0])
+		self.node_size = self.superblock.node_size
 
 		self.chunk_tree_cache = self.bootstrap_chunk_tree()
 
@@ -453,6 +682,14 @@ class Btrfs:
 				continue
 
 
+	def read_node(self, logical):
+
+		node_addr = self.physical(logical)
+		self.dev[0].seek(node_addr[1])
+
+		return self.dev[0].read(self.node_size)
+
+
 	def find_range(self, node_logical, key_start, key_end, filter= lambda x: True):
 		pass # TODO make find_all use this with full range?
 
@@ -526,94 +763,44 @@ class Btrfs:
 		return payload
 
 
+	def find_key(self, root_node, key, nodes=()):
+		# Nodes is list of nodes logical addresses with root at 0,
+		# node_0, node_1, ..., node_x
+		# or root node
+		# Nodes should add index? ((node1, 5), (node2, -1))
+		# root, key, nodes, indices
 
-	def find_key(self, node_logical, key):
 		# Perform binary search in each node until found
+		# TODO: return full path of nodes? -> item, payload, nodepath?
+		#       then add find next to get a find_range?
 
-		node_addr = self.physical(node_logical)
-
-		self.dev[0].seek(node_addr[1])
-		node_header = Header.parse_stream(self.dev[0])
-		data_root = self.dev[0].tell()
-
-		is_leaf = node_header.level == 0
-
-		if(is_leaf):
-			keyobjs = Item[node_header.nritems].parse_stream(self.dev[0])
-
-		else:
-			keyobjs = KeyPtr[node_header.nritems].parse_stream(self.dev[0])
-
-		lower = 0
-		upper = len(keyobjs) - 1
-
-		while True:
-			i = (lower + upper)//2
-
-			c = self.compare_keys(key, keyobjs[i].key)
-
-			if(c == 0):
-				if(is_leaf):
-					return keyobjs[i], self.parse_item(keyobjs[i], data_root)
-				else:
-					return self.find_key(keyobjs[i].blockptr, key)
-
-			elif(lower == upper):
-				if(is_leaf): # Key not found
-					return None
-
-				else:
-					# keyobjs are KeyPtrs
-					if(i == 0 and c < 0): # Key not found
-						return None
-
-					if(c < 0):
-						if(i == 0):
-							return None
-
-						return self.find_key(keyobjs[i-1].blockptr, key)
-
-					else:
-						return self.find_key(keyobjs[i].blockptr, key)
-
-
-			elif(c < 0):
-				if(i == 0):
-					return None
-
-				upper = i - 1
-
-			else:
-				lower = i + 1
+		node = BtrfsNode(self, root_node, None, 0)
+		return node.find(key)
 
 
 	def find_path(self, root_inode, path):
-		# Where do I find root? use constart 256 for start (is this always true?)
+		# TODO:
+		# Where do I find root? use constant 256 for start (is this always true?)
 		# also add which tree (fs/subvolume)?
 
-#		print(self.superblock)
+		node = BtrfsNode(self, self.fs_tree.bytenr)
+		items = node.find_all_objectid(root_inode)
 
-#		print('find_path', root_inode, path)
+		for item in items:
 
-		# TODO Needs a find range for consecutive keys to imporve performance...
-		children = self.find_all(self.fs_tree.bytenr,
-		                         lambda key: key.type == DIR_INDEX_KEY and
-		                                     key.objectid == root_inode)
+			if(item.key.type != DIR_INDEX_KEY):
+				continue
 
-		for item, payload in children:
+			if(item.data.name == path[0]):
 
-			if(payload.name == path[0]):
-
-				inode_item, inode_payload = \
-					self.find_key(self.fs_tree.bytenr, payload.location)
-
-#				print(payload.name)
+				# TODO: is this accessible by next/prev?
+				inode_item = node.find(item.data.location)
 
 				if(len(path) > 1):
 					return self.find_path(inode_item.key.objectid, path[1:])
 
 				else:
-					return inode_item, inode_payload
+					return inode_item
 
 
 	def read_parent_node(self, node_logical, key):
@@ -757,53 +944,68 @@ if(__name__ == '__main__'):
 			if(args[1] == 'inode'):
 				inode_nr = int(args[2])
 				key = Container(objectid=inode_nr, type=INODE_ITEM_KEY, offset=0)
-				item, payload = btrfs.find_key(btrfs.fs_tree.bytenr, key)
-				print(item)
-				print(payload)
+				inode = btrfs.find_key(btrfs.fs_tree.bytenr, key)
+
+				if(inode == None):
+					print('Inode not found')
+					sys.exit(1)
+
+				print(inode.item)
+				print(inode.data)
+
 
 			if(args[1] == 'csum'):
 				logical = int(args[2])
 				key = Container(objectid=EXTENT_CSUM_OBJECTID, type=EXTENT_CSUM_KEY, offset=logical)
-				item, payload = btrfs.find_key(btrfs.csum_tree.bytenr, key)
+				result = btrfs.find_key(btrfs.csum_tree.bytenr, key)
 
-				print(item)
-				print(payload)
+				if(result == None):
+					print('Csum not found')
+					sys.exit(1)
+
+				print(result.item())
+				print(result.data())
 
 			if(args[1] == 'path'):
 				path = args[3]
-				item, payload = btrfs.find_path(256, path.encode().split(b'/'))
+				item = btrfs.find_path(256, path.encode().split(b'/'))
 
-				extents = btrfs.find_all(btrfs.fs_tree.bytenr,
-				                         lambda key: key.objectid == item.key.objectid and
-				                                     key.type == EXTENT_DATA_KEY)
+				node = BtrfsNode(btrfs, btrfs.fs_tree.bytenr)
+				extents = node.find_all_objectid(item.key.objectid)
 
 				if(args[2] == 'info'):
-					print(item)
-					print(payload)
+					print(item.key)
+					print(item.data)
 
-					for item, payload in extents:
-						print(item)
-						print(payload)
-						print(btrfs.physical(payload.disk_bytenr))
+					for item in extents:
+						if(item.key.type != EXTENT_DATA_KEY):
+							continue
+
+						print(item.key)
+						print(item.data)
+						print(btrfs.physical(item.data.disk_bytenr))
 
 				elif(args[2] == 'data'):
 					x = 0
-					size = payload.size
-					for item, payload in extents:
+					size = item.data.size
+					for item in extents:
+						if(item.key.type != EXTENT_DATA_KEY):
+							continue
+
 						if(item.key.offset != 0):
 							raise Exception('Missing extent data for file')
 
-						if(payload.compression != COMPRESS_NONE):
+						if(item.data.compression != COMPRESS_NONE):
 							raise Exception('Extent is compressed which is not supported')
 
-						if(payload.type == FILE_EXTENT_INLINE):
-							sys.stdout.buffer.write(payload.data)
-							extent_size = len(payload.data)
+						if(item.data.type == FILE_EXTENT_INLINE):
+							sys.stdout.buffer.write(item.data.data)
+							extent_size = len(item.data.data)
 
-						elif(payload.type == FILE_EXTENT_REG):
-							extent_size = payload.num_bytes
+						elif(item.data.type == FILE_EXTENT_REG):
+							extent_size = item.data.num_bytes
 							len = min(extent_size, size-x)
-							addr = btrfs.physical(payload.disk_bytenr, len)
+							addr = btrfs.physical(item.data.disk_bytenr, len)
 
 							btrfs.dev[0].seek(addr[1])
 							data = btrfs.dev[0].read(len)
