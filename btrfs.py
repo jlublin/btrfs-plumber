@@ -353,6 +353,23 @@ class BtrfsNode:
 			return node.first_key()
 
 
+	def find_all(self):
+
+		item = self.first_key()
+
+		if(item):
+			yield item
+		else:
+			return
+
+		while True:
+			item = item.next()
+			if(item):
+				yield item
+			else:
+				return
+
+
 	def find(self, key):
 
 		# Binary search in node keys
