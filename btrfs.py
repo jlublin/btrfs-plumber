@@ -275,6 +275,15 @@ RootBackRef = Struct(
 
 RootRef = RootBackRef
 
+def compare_keys(key1, key2):
+	# -> -1 (key1 < key2), 0 (equal) or 1 (key1 > key2)
+
+	full_key1 = (key1.objectid << 72) + (key1.type << 64) + key1.offset
+	full_key2 = (key2.objectid << 72) + (key2.type << 64) + key2.offset
+
+	return full_key1 - full_key2
+
+
 class LogicalMap:
 
 	def __init__(self, logical, size, maps):
@@ -517,21 +526,6 @@ class Btrfs:
 		return payload
 
 
-	def compare_keys(self, key1, key2):
-		# -> -1 (key1 < key2), 0 (equal) or 1 (key1 > key2)
-
-		full_key1 = (key1.objectid << 72) + (key1.type << 64) + key1.offset
-		full_key2 = (key2.objectid << 72) + (key2.type << 64) + key2.offset
-
-		if(full_key1 < full_key2):
-			return -1
-
-		elif(full_key1 > full_key2):
-			return 1
-
-		else:
-			return 0
-
 
 	def find_key(self, node_logical, key):
 		# Perform binary search in each node until found
@@ -645,7 +639,7 @@ class Btrfs:
 		while True:
 			i = (lower + upper)//2
 
-			c = self.compare_keys(key, keyobjs[i].key)
+			c = compare_keys(key, keyobjs[i].key)
 
 			if(c == 0):
 				if(is_leaf):
@@ -681,6 +675,7 @@ class Btrfs:
 
 			else:
 				lower = i + 1
+
 
 	def find_checksums(self, logical_start, logical_end):
 
