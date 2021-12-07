@@ -55,6 +55,28 @@ COMPRESS_ZLIB = 1
 COMPRESS_LZO = 2
 COMPRESS_ZSTD = 3
 
+# See man inode(7)
+S_IFMT   = 0o170000
+S_IFSOCK = 0o140000
+S_IFLNK  = 0o120000
+S_IFREG  = 0o100000
+S_IFBLK  = 0o060000
+S_IFDIR  = 0o040000
+S_IFCHR  = 0o020000
+S_IFIFO  = 0o010000
+
+S_NAMES = \
+{
+	S_IFSOCK: 'socket',
+	S_IFLNK: 'symbolic link',
+	S_IFREG: 'regular file',
+	S_IFBLK: 'block device',
+	S_IFDIR: 'directory',
+	S_IFCHR: 'character device',
+	S_IFIFO: 'FIFO'
+}
+
+
 Key = Struct(
 	"objectid" / Int64ul,
 	"type" / Int8ul,
