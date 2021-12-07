@@ -1007,6 +1007,7 @@ if(__name__ == '__main__'):
 	# find file <path> -> metadata and stuff?
 	# readdir <path> -> all files/dirs with objectids?
 	# subvolume list
+	# physical <logical> -> list of (device -> physical)
 
 	if(len(args) > 0):
 
@@ -1174,3 +1175,12 @@ if(__name__ == '__main__'):
 						raise Exception('Invalid extent data type found!')
 
 					x += extent_size
+
+		elif(args[0] == 'physical'):
+
+			logical = int(args[1])
+
+			physical = btrfs.physical(logical)
+
+			for drive, address in physical.items():
+				print('{}: {}'.format(drive, address))
