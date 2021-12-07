@@ -814,39 +814,6 @@ class Btrfs:
 		return self.dev[0].read(self.node_size)
 
 
-	def find_range(self, node_logical, key_start, key_end, filter= lambda x: True):
-		pass # TODO make find_all use this with full range?
-
-
-	def find_all(self, node_logical, filter=lambda x: True):
-		# TODO: filter_objectid, filter_type, filter_offset?
-		#       or lambda?
-		'''Generator which finds all items in a node (full tree or part of tree)'''
-
-		node_addr = self.physical(node_logical)
-
-		self.dev[0].seek(node_addr[1])
-		node_header = Header.parse_stream(self.dev[0])
-		data_root = self.dev[0].tell()
-
-		if(node_header.level == 0):
-			items = Item[node_header.nritems].parse_stream(self.dev[0])
-
-			for item in items:
-
-				if(not filter(item.key)):
-					continue
-
-				payload = self.parse_item(item, data_root)
-
-				yield item, payload
-
-		else:
-			key_ptrs = KeyPtr[node_header.nritems].parse_stream(self.dev[0])
-			for key_ptr in key_ptrs:
-				yield from self.find_all(key_ptr.blockptr, filter)
-
-
 	def parse_item(self, item, data_root):
 
 		if(item.key.type == DIR_ITEM_KEY):
