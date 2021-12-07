@@ -520,8 +520,13 @@ class BtrfsNode:
 		lower = 0
 		upper = len(self.keyobjs) - 1
 
+		key = Container(objectid=EXTENT_CSUM_OBJECTID,
+		                type=EXTENT_CSUM_KEY,
+		                offset=logical)
+
 		while True:
 			i = (lower + upper)//2
+
 
 			if(self.is_leaf):
 				keyobj = self.keyobjs[i]
@@ -531,10 +536,8 @@ class BtrfsNode:
 				c = compare_csum_keys(logical, item)
 
 			else:
-				key = Container(objectid=EXTENT_CSUM_OBJECTID,
-				                type=EXTENT_CSUM_KEY,
-				                offset=logical)
 				c = compare_keys(key, self.keyobjs[i].key)
+
 
 			if(c == 0):
 				if(self.is_leaf):
@@ -543,7 +546,7 @@ class BtrfsNode:
 					return BtrfsItem(keyobj, data, self, i)
 				else:
 					node = BtrfsNode(self.fs, self.keyobjs[i].blockptr, self, i)
-					return node.find(key)
+					return node.find_csum(logical)
 
 			elif(lower == upper):
 				if(self.is_leaf): # Key not found
@@ -559,12 +562,11 @@ class BtrfsNode:
 							return None
 
 						node = BtrfsNode(self.fs, self.keyobjs[i-1].blockptr, self, i-1)
-						return node.find(key)
-
+						return node.find_csum(logical)
 
 					else:
 						node = BtrfsNode(self.fs, self.keyobjs[i].blockptr, self, i)
-						return node.find(key)
+						return node.find_csum(logical)
 
 			elif(c < 0):
 				if(i == 0):
