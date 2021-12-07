@@ -1102,10 +1102,13 @@ if(__name__ == '__main__'):
 
 		if(args[0] == 'subvolume'):
 			if(args[1] == 'list'):
-				for item, payload in btrfs.find_all(btrfs.superblock.root,
-					lambda key: key.type == ROOT_REF_KEY):
-					print('Subvolume {} (parent: {}): {}'.format(
-					      item.key.offset, item.key.objectid, payload.name))
+				node = BtrfsNode(btrfs, btrfs.superblock.root)
+				for item in node.find_all():
+					if(item.key.type != ROOT_REF_KEY):
+						continue
+					print('Subvolume {}/{} (parent: {}): {}'.format(
+					      item.key.offset, item.data.dirid,
+					      item.key.objectid, item.data.name))
 
 		if(args[0] == 'checksums'):
 			for item, payload in btrfs.find_all(btrfs.csum_tree.bytenr):
