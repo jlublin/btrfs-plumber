@@ -997,14 +997,20 @@ class Btrfs:
 		csums = []
 		current = logical_start
 
-		# TODO: improve performance
-		for item, payload in btrfs.find_all(btrfs.csum_tree.bytenr):
-			start = item.key.offset
-			end = start + 	(item.size//4) * 4096
+		node = BtrfsNode(self, self.csum_tree.bytenr)
+		items = node.find_all_csum(logical_start)
 
-			while(current >= start and current < end):
-				pos = (current - start) // 4096
-				csums.append(payload.csum[pos])
+		for item in items:
+			csum_start = item.key.offset
+			csum_end = csum_start + (item.size//4) * 4096
+
+			# If checksums were missing then break loop
+			if(csum_start > current):
+				break
+
+			while(current >= csum_start and current < csum_end):
+				pos = (current - csum_start) // 4096
+				csums.append(item.data.csum[pos])
 
 				current += 4096
 
@@ -1012,7 +1018,7 @@ class Btrfs:
 					break
 
 		if(current != logical_end):
-			raise Exception('Could not find checksums!')
+			raise Exception('Could not find all checksums!')
 
 		return csums
 
@@ -1089,8 +1095,8 @@ if(__name__ == '__main__'):
 					print('Csum not found')
 					sys.exit(1)
 
-				print(result.item())
-				print(result.data())
+				print(result.item)
+				print(result.data)
 
 			if(args[1] == 'path'):
 				path = args[3]
@@ -1173,36 +1179,41 @@ if(__name__ == '__main__'):
 			if(args[1] == 'file'):
 
 				path = args[2]
-				item, payload = btrfs.find_path(256, path.encode().split(b'/'))
+				item = btrfs.find_path(256, path.encode().split(b'/'))
 
-				extents = btrfs.find_all(btrfs.fs_tree.bytenr,
-				                         lambda key: key.objectid == item.key.objectid and
-				                                     key.type == EXTENT_DATA_KEY)
+				node = BtrfsNode(btrfs, btrfs.fs_tree.bytenr)
+				extents = node.find_all_objectid(item.key.objectid)
 
 				x = 0
 
-				for item, payload in extents:
-					if(item.key.offset != 0):
+				for extent in extents:
+
+					if(extent.key.type != EXTENT_DATA_KEY):
+						continue
+
+					if(extent.key.offset != 0):
 						raise Exception('Missing extent data for file')
 
-					if(payload.compression != COMPRESS_NONE):
+					if(extent.data.compression != COMPRESS_NONE):
 						raise Exception('Extent is compressed which is not supported')
 
-					if(payload.type == FILE_EXTENT_INLINE):
+					if(extent.data.type == FILE_EXTENT_INLINE):
 						# Read node header -> csum
-						extent_size = len(payload.data)
+						extent_size = len(extent.data.data)
 
-						node_data = btrfs.read_parent_node(btrfs.fs_tree.bytenr, item.key)
+						node_data = extent.node.data
 						csum = crc32c.crc32c(node_data[CSUM_SIZE:])
 						node_csum = Int32ul.parse(node_data[0:CSUM_SIZE])
 
 						if(csum != node_csum):
 							print('Checksum error, {} != {}'.format(
 								csum, node_csum))
+						else:
+							print('Node checksum @{} OK'.format(extent.node.logical))
 
-					elif(payload.type == FILE_EXTENT_REG):
-						extent_size = payload.disk_num_bytes
-						addr = btrfs.physical(payload.disk_bytenr, extent_size)
+					elif(extent.data.type == FILE_EXTENT_REG):
+						extent_size = extent.data.disk_num_bytes
+						addr = btrfs.physical(extent.data.disk_bytenr, extent_size)
 
 						btrfs.dev[0].seek(addr[1])
 						data = btrfs.dev[0].read(extent_size)
