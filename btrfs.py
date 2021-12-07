@@ -980,7 +980,7 @@ if(__name__ == '__main__'):
 				print(inode.data)
 
 
-			if(args[1] == 'csum'):
+			elif(args[1] == 'csum'):
 				logical = int(args[2])
 				key = Container(objectid=EXTENT_CSUM_OBJECTID, type=EXTENT_CSUM_KEY, offset=logical)
 				result = btrfs.find_key(btrfs.csum_tree.bytenr, key)
@@ -992,7 +992,7 @@ if(__name__ == '__main__'):
 				print(result.item)
 				print(result.data)
 
-			if(args[1] == 'path'):
+			elif(args[1] == 'path'):
 				path = args[3]
 				item = btrfs.find_path(256, path.encode().split(b'/'))
 
@@ -1044,15 +1044,15 @@ if(__name__ == '__main__'):
 						x += extent_size
 
 
-		if(args[0] == 'chunks'):
+		elif(args[0] == 'chunks'):
 			print(btrfs.chunk_tree_cache)
 
 
-		if(args[0] == 'files'):
+		elif(args[0] == 'files'):
 			files = btrfs.list_files()
 			print('Files:', files)
 
-		if(args[0] == 'subvolume'):
+		elif(args[0] == 'subvolume'):
 			if(args[1] == 'list'):
 				node = BtrfsNode(btrfs, btrfs.superblock.root)
 				for item in node.find_all():
@@ -1062,13 +1062,13 @@ if(__name__ == '__main__'):
 					      item.key.offset, item.data.dirid,
 					      item.key.objectid, item.data.name))
 
-		if(args[0] == 'checksums'):
+		elif(args[0] == 'checksums'):
 			node = BtrfsNode(btrfs, btrfs.csum_tree.bytenr)
 			for item in node.find_all():
 				print('{} - {} 4k pages = {} bytes'.format(
 					item.key.offset, item.size//4, item.size//4*2**12))
 
-		if(args[0] == 'verify'):
+		elif(args[0] == 'verify'):
 			import crc32c
 
 			if(args[1] == 'file'):
