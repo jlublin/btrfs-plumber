@@ -1153,6 +1153,42 @@ if(__name__ == '__main__'):
 
 					x += extent_size
 
+		elif(args[0] == 'ls'):
+
+			if(len(args) < 2):
+				inode_id = 256
+				is_dir = True
+				key = Container(objectid=inode_id, type=INODE_ITEM_KEY, offset=0)
+				item = btrfs.find_key(btrfs.fs_tree.bytenr, key)
+
+			else:
+				path = args[1].encode().strip(b'/').split(b'/')
+				item = btrfs.find_path(256, path)
+
+				if(not item):
+					print('Item not found or subvolume (TODO)')
+					sys.exit(1)
+
+				inode_id = item.key.objectid
+				mode = item.data.mode
+				is_dir = (mode & S_IFMT) == S_IFDIR
+
+			if(not is_dir):
+				# TODO: use ls -l output format
+				print('{}\t{:04o}\t{}'.format(
+					path[-1].decode(), mode & (~S_IFMT), S_NAMES[(mode & S_IFMT)]))
+
+			else:
+				for item in item.node.find_all_objectid(inode_id):
+					if(item.key.type != DIR_INDEX_KEY):
+						continue
+
+					if(item.data.type == FT_DIR):
+						print('{}/'.format(item.data.name.decode()))
+					else:
+						print(item.data.name.decode())
+
+
 		elif(args[0] == 'physical'):
 
 			logical = int(args[1])
