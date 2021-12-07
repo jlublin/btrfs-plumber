@@ -495,6 +495,111 @@ class BtrfsNode:
 				lower = i + 1
 
 
+	def compare_csum_keys(logical, csum_item):
+		# -> -1 (key1 < key2), 0 (equal) or 1 (key1 > key2)
+
+		csum_start = csum_item.key.offset
+		csum_end = csum_start + (csum_item.size//4) * 4096
+
+		if(logical < csum_start):
+			return -1
+
+		elif(logical >= csum_end):
+			return 1
+
+		else:
+			return 0
+
+
+	def find_csum(self, logical):
+
+		# Return csum containing logical
+		# We want the last offset <= logical, replace compare_keys to reflect this
+
+		# Binary search in node keys
+		lower = 0
+		upper = len(self.keyobjs) - 1
+
+		while True:
+			i = (lower + upper)//2
+
+			if(self.is_leaf):
+				keyobj = self.keyobjs[i]
+				data = self.fs.parse_item(keyobj, self.data_root)
+				item = BtrfsItem(keyobj, data, self, i)
+
+				c = compare_csum_keys(logical, item)
+
+			else:
+				key = Container(objectid=EXTENT_CSUM_OBJECTID,
+				                type=EXTENT_CSUM_KEY,
+				                offset=logical)
+				c = compare_keys(key, self.keyobjs[i].key)
+
+			if(c == 0):
+				if(self.is_leaf):
+					keyobj = self.keyobjs[i]
+					data = self.fs.parse_item(keyobj, self.data_root)
+					return BtrfsItem(keyobj, data, self, i)
+				else:
+					node = BtrfsNode(self.fs, self.keyobjs[i].blockptr, self, i)
+					return node.find(key)
+
+			elif(lower == upper):
+				if(self.is_leaf): # Key not found
+					return None
+
+				else:
+					# keyobjs are KeyPtrs
+					if(i == 0 and c < 0): # Key not found
+						return None
+
+					if(c < 0):
+						if(i == 0):
+							return None
+
+						node = BtrfsNode(self.fs, self.keyobjs[i-1].blockptr, self, i-1)
+						return node.find(key)
+
+
+					else:
+						node = BtrfsNode(self.fs, self.keyobjs[i].blockptr, self, i)
+						return node.find(key)
+
+			elif(c < 0):
+				if(i == 0):
+					return None
+
+				upper = i - 1
+
+			else:
+				lower = i + 1
+
+
+	def find_all_csum(self, logical):
+
+		item = self.find_csum(logical)
+
+		if(item):
+			yield item
+		else:
+			return
+
+		while True:
+			item = item.next()
+
+			if(item):
+				if(item.key.objectid == EXTENT_CSUM_OBJECTID and
+				   item.key.type == EXTENT_CSUM_KEY):
+					yield item
+				else:
+					continue
+
+			else:
+				return
+
+
+	# TODO with generic generator? (next_generator?)
 	def find_all_objectid(self, objectid):
 
 		item = self.find_objectid(objectid)
