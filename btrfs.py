@@ -712,12 +712,9 @@ class Btrfs:
 		for cache_logical, chunk_size in self.chunk_tree_cache:
 			if(logical >= cache_logical and logical < cache_logical + chunk_size):
 
-#				print(logical, cache_logical, chunk_size)
-
 				if(logical + size > cache_logical + chunk_size):
 					raise Exception('Logical addressing does not fit in chunk')
 
-#				print(self.chunk_tree_cache[(cache_logical, chunk_size)])
 				m = { devid: x + logical - cache_logical
 				      for devid, x in self.chunk_tree_cache[(cache_logical, chunk_size)].items() }
 				return m
@@ -747,9 +744,6 @@ class Btrfs:
 
 				self.dev[0].seek(data_root + item.offset)
 				chunk = Chunk.parse_stream(self.dev[0])
-
-#				print(item)
-#				print(chunk)
 
 				self.chunk_tree_cache[(item.key.offset, chunk.length)] = \
 					{x.devid: x.offset for x in chunk.stripes}
@@ -854,17 +848,8 @@ class Btrfs:
 		return payload
 
 
-	def find_key(self, root_node, key, nodes=()):
-		# Nodes is list of nodes logical addresses with root at 0,
-		# node_0, node_1, ..., node_x
-		# or root node
-		# Nodes should add index? ((node1, 5), (node2, -1))
-		# root, key, nodes, indices
-
-		# Perform binary search in each node until found
-		# TODO: return full path of nodes? -> item, payload, nodepath?
-		#       then add find next to get a find_range?
-
+	def find_key(self, root_node, key):
+		# TODO: Remove and only use BtrfsNode.find() ?
 		node = BtrfsNode(self, root_node, None, 0)
 		return node.find(key)
 
