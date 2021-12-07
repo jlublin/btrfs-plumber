@@ -1111,11 +1111,10 @@ if(__name__ == '__main__'):
 					      item.key.objectid, item.data.name))
 
 		if(args[0] == 'checksums'):
-			for item, payload in btrfs.find_all(btrfs.csum_tree.bytenr):
-#				print(item)
+			node = BtrfsNode(btrfs, btrfs.csum_tree.bytenr)
+			for item in node.find_all():
 				print('{} - {} 4k pages = {} bytes'.format(
 					item.key.offset, item.size//4, item.size//4*2**12))
-#				print(payload)
 
 		if(args[0] == 'verify'):
 			import crc32c
