@@ -1161,14 +1161,16 @@ if(__name__ == '__main__'):
 						for i in range(extent_size // 4096):
 							block = data[4096*i:4096*(i+1)]
 							block_csum = crc32c.crc32c(block)
-							extent_csum = btrfs.find_checksums(payload.disk_bytenr, payload.disk_bytenr + extent_size)[0]
+							extent_csum = btrfs.find_checksums(extent.data.disk_bytenr, extent.data.disk_bytenr + extent_size)[i]
+							logical = extent.data.disk_bytenr + i * 4096
 
 							if(block_csum != extent_csum):
-								print('Checksum error, {} != {}'.format(
-									block_csum, extent_csum))
+								print('Checksum @{} ERROR, {} != {}'.format(
+									logical, block_csum, extent_csum))
+							else:
+								print('Checksum @{} OK'.format(logical))
 
 					else:
 						raise Exception('Invalid extent data type found!')
-
 
 					x += extent_size
