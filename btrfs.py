@@ -925,67 +925,6 @@ class Btrfs:
 					return inode_item
 
 
-	def read_parent_node(self, node_logical, key):
-
-		# Perform binary search in each node until found
-
-		node_addr = self.physical(node_logical)
-
-		self.dev[0].seek(node_addr[1])
-		node_header = Header.parse_stream(self.dev[0])
-
-		is_leaf = node_header.level == 0
-
-		if(is_leaf):
-			keyobjs = Item[node_header.nritems].parse_stream(self.dev[0])
-
-		else:
-			keyobjs = KeyPtr[node_header.nritems].parse_stream(self.dev[0])
-
-		lower = 0
-		upper = len(keyobjs) - 1
-
-		while True:
-			i = (lower + upper)//2
-
-			c = compare_keys(key, keyobjs[i].key)
-
-			if(c == 0):
-				if(is_leaf):
-					self.dev[0].seek(node_addr[1])
-					return self.dev[0].read(self.superblock.node_size)
-				else:
-					return self.read_parent_node(keyobjs[i].blockptr, key)
-
-			elif(lower == upper):
-				if(is_leaf): # Key not found
-					return None
-
-				else:
-					# keyobjs are KeyPtrs
-					if(i == 0 and c < 0): # Key not found
-						return None
-
-					if(c < 0):
-						if(i == 0):
-							return None
-
-						return self.read_parent_node(keyobjs[i-1].blockptr, key)
-
-					else:
-						return self.read_parent_node(keyobjs[i].blockptr, key)
-
-
-			elif(c < 0):
-				if(i == 0):
-					return None
-
-				upper = i - 1
-
-			else:
-				lower = i + 1
-
-
 	def find_checksums(self, logical_start, logical_end):
 
 		if(logical_start & 0xfff != 0):
