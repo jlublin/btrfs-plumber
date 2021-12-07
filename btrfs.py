@@ -1055,7 +1055,6 @@ if(__name__ == '__main__'):
 
 						print(item.key)
 						print(item.data)
-						print(btrfs.physical(item.data.disk_bytenr))
 
 				elif(args[2] == 'data'):
 					x = 0
