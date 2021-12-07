@@ -285,6 +285,22 @@ def compare_keys(key1, key2):
 	return full_key1 - full_key2
 
 
+def compare_csum_keys(logical, csum_item):
+	# -> -1 (key1 < key2), 0 (equal) or 1 (key1 > key2)
+
+	csum_start = csum_item.key.offset
+	csum_end = csum_start + (csum_item.size//4) * 4096
+
+	if(logical < csum_start):
+		return -1
+
+	elif(logical >= csum_end):
+		return 1
+
+	else:
+		return 0
+
+
 class LogicalMap:
 
 	def __init__(self, logical, size, maps):
@@ -493,22 +509,6 @@ class BtrfsNode:
 
 			else:
 				lower = i + 1
-
-
-	def compare_csum_keys(logical, csum_item):
-		# -> -1 (key1 < key2), 0 (equal) or 1 (key1 > key2)
-
-		csum_start = csum_item.key.offset
-		csum_end = csum_start + (csum_item.size//4) * 4096
-
-		if(logical < csum_start):
-			return -1
-
-		elif(logical >= csum_end):
-			return 1
-
-		else:
-			return 0
 
 
 	def find_csum(self, logical):
