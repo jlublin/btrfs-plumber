@@ -710,22 +710,11 @@ class Btrfs:
 				return None
 
 			chunk_tree_cache[(key.offset, chunk.length)] = \
-				[(x.devid, x.offset) for x in chunk.stripes]
+				{x.devid: x.offset for x in chunk.stripes}
 
 			offset += Chunk.sizeof(chunk)
 
 		return chunk_tree_cache
-
-
-	def logical_to_physical(self, logical):
-		'''logical -> (size, [[devid, offset]...]'''
-
-		for cache_logical, size in self.chunk_tree_cache:
-			if(logical >= cache_logical and logical < cache_logical + size):
-				return (size,
-					[(x[0], x[1] + logical - cache_logical) for x in self.chunk_tree_cache[(cache_logical, size)]])
-
-		return None
 
 
 	def physical(self, logical, size=0):
@@ -750,9 +739,9 @@ class Btrfs:
 
 	def read_chunk_tree(self, chunk_root_logical):
 
-		physical_map = self.logical_to_physical(chunk_root_logical)
+		physical = self.physical(chunk_root_logical)
 
-		self.dev[0].seek(physical_map[1][0][1])
+		self.dev[0].seek(physical[1])
 		chunk_root_header = Header.parse_stream(self.dev[0])
 		data_root = self.dev[0].tell()
 
