@@ -1132,10 +1132,10 @@ if(__name__ == '__main__'):
 							logical = extent.data.disk_bytenr + i * 4096
 
 							if(block_csum != extent_csum):
-								print('Checksum @{} ERROR, {} != {}'.format(
+								print('Checksum @logical {} ERROR, {} != {}'.format(
 									logical, block_csum, extent_csum))
 							else:
-								print('Checksum @{} OK'.format(logical))
+								print('Checksum @logical {} OK'.format(logical))
 
 					else:
 						raise Exception('Invalid extent data type found!')
