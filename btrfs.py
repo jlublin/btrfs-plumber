@@ -1142,6 +1142,38 @@ if(__name__ == '__main__'):
 
 					x += extent_size
 
+			elif(args[1] == 'logical'):
+
+				logical = int(args[2])
+				addr_map = btrfs.physical(logical)
+
+				node = BtrfsNode(btrfs, btrfs.csum_tree.bytenr)
+				csum = node.find_csum(logical)
+				csum_index = (logical-csum.key.offset) // 4096
+
+				checksum = csum.data.csum[csum_index]
+				checksum_logical = csum.node.logical + Header.sizeof() + \
+				                   csum.item.offset + csum_index * 4
+
+				print('Checksum 0x{:02x} @logical {}'
+				      .format(checksum, checksum_logical))
+
+				for disk in addr_map:
+
+					# TODO: proper disk mapping
+					btrfs.dev[disk-1].seek(addr_map[disk])
+					block = btrfs.dev[disk-1].read(4096)
+					block_csum = crc32c.crc32c(block)
+
+					if(block_csum == checksum):
+						print('Checksum @logical {} @disk {} : {} OK'
+						      .format(logical, disk, addr_map[disk]))
+					else:
+						print('Checksum @logical {} @disk {} : {} ERROR, mismatch: 0x{:02x}'
+						      .format(logical, disk, addr_map[disk], block_csum))
+
+
+
 		elif(args[0] == 'ls'):
 
 			if(len(args) < 2):
