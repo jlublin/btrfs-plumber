@@ -955,13 +955,32 @@ class Btrfs:
 				print('Inode ref:', item.data.name)
 
 
+def print_help():
+	help_str = '''\
+usage: btrfs-plumber.py [--help] <command> [<args>]
+
+Commands:
+    read           Read items
+    chunks         Print all chunk mappings (logical -> physical)
+    files          List all files
+    subvolume      Print information about subvolumes
+    checksums      Print all checksum items
+    verify         Verify files and objects
+'''
+	print(help_str)
+
+
 if(__name__ == '__main__'):
 	import getopt
 	import sys
 
 	shortopts = ''
-	longopts = []
+	longopts = ['help']
 	optslist, args = getopt.getopt(sys.argv[1:], shortopts, longopts)
+
+	if('help' in optslist):
+		print_help()
+		sys.exit(1)
 
 	btrfs = Btrfs(['btrfs_test1.img', 'btrfs_test2.img'])
 
@@ -1218,3 +1237,6 @@ if(__name__ == '__main__'):
 
 			for drive, address in physical.items():
 				print('{}: {}'.format(drive, address))
+
+	else:
+		print_help()
