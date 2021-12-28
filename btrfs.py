@@ -367,7 +367,7 @@ class BtrfsNode:
 
 		self.header = Header.parse_stream(stream)
 
-		self.data_root = stream.tell() + self.fs.physical(self.logical)[btrfs.dev0_id] # TODO: parse from self.data
+		self.data_root = stream.tell() + self.fs.physical(self.logical)[fs.dev0_id] # TODO: parse from self.data
 		self.num_items = self.header.nritems
 
 		self.is_leaf = (self.header.level == 0)
