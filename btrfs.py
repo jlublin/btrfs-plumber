@@ -5,6 +5,8 @@ import crc32c
 # TODO: verify that we do not use RAID0/5/6. RAID1 is OK
 # TODO: only CRC32 checksums
 
+STATE_FILE = 'btrfs_plumber_state'
+
 SUPERBLOCK_MAGIC = b'_BHRfS_M'
 SUPERBLOCK_OFFSETS = [0x1_0000, 0x400_0000, 0x40_0000_0000, 0x4_0000_0000_0000]
 CSUM_SIZE = 32
@@ -971,6 +973,7 @@ def print_help():
 usage: btrfs-plumber.py [--help] <command> [<args>]
 
 Commands:
+    init <disk>... Initialize btrfs-plumber with disks
     read           Read items
     ls             list files and directories
     chunks         Print all chunk mappings (logical -> physical)
@@ -985,6 +988,9 @@ Commands:
 if(__name__ == '__main__'):
 	import getopt
 	import sys
+	import os
+	import yaml
+	import tempfile
 
 	shortopts = ''
 	longopts = ['help']
@@ -993,8 +999,6 @@ if(__name__ == '__main__'):
 	if('help' in optslist):
 		print_help()
 		sys.exit(1)
-
-	btrfs = Btrfs(['btrfs_test1.img', 'btrfs_test2.img'])
 
 	# read <item-type> <key>
 	# read inode <inode-number>
@@ -1006,6 +1010,51 @@ if(__name__ == '__main__'):
 	# physical <logical> -> list of (device -> physical)
 
 	if(len(args) > 0):
+
+		# Move to get_state_path or similar
+		temp_dir = tempfile.gettempdir()
+
+		state_path = os.path.join(
+			temp_dir,
+			'{}_{}'.format(STATE_FILE, os.getsid(0)))
+
+		if(args[0] == 'init'):
+			state = {}
+			state['disks'] = args[1:]
+
+			# Verify disks
+			try:
+				btrfs = Btrfs(state['disks'])
+			except:
+				print('Invalid disks: {}'.format(args[1:]))
+				sys.exit(1)
+
+			# Store disks to session state file
+			try:
+				with open(state_path, 'wt') as f:
+					yaml.safe_dump(state, f)
+			except:
+				# State file was invalid, remove it
+				print('Could not create state file {}'.format(state_path))
+				sys.exit(1)
+
+			sys.exit(0)
+
+		else:
+			try:
+				with open(state_path, 'rt') as f:
+					state = yaml.safe_load(f)
+					btrfs = Btrfs(state['disks'])
+
+			except:
+				# State file was invalid, remove it if it exists
+				try:
+					os.unlink(state_path)
+				except:
+					pass
+
+				print('Please initialize drives first! (btrfs-plumber init)')
+				sys.exit(1)
 
 		if(args[0] == 'read'):
 
