@@ -674,6 +674,7 @@ class Btrfs:
 		self.chunk_tree_cache = {}
 		self.subvolume_trees = {}
 		self.dev = {}
+		self.dev_name = {}
 
 		self.dev0_name = devices[0]
 
@@ -682,6 +683,7 @@ class Btrfs:
 			f.seek(SUPERBLOCK_OFFSETS[0])
 			superblock = Superblock.parse_stream(f)
 			self.dev[superblock.dev_item.devid] = f
+			self.dev_name[superblock.dev_item.devid] = dev
 
 			if(dev == self.dev0_name):
 				self.dev0 = f
