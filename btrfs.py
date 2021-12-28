@@ -972,6 +972,7 @@ usage: btrfs-plumber.py [--help] <command> [<args>]
 
 Commands:
     read           Read items
+    ls             list files and directories
     chunks         Print all chunk mappings (logical -> physical)
     files          List all files
     subvolume      Print information about subvolumes
