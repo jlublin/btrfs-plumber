@@ -350,6 +350,10 @@ class BtrfsItem:
 		return self.node.next(self.index)
 
 
+	def prev(self):
+		return self.node.prev(self.index)
+
+
 class BtrfsNode:
 
 	def __init__(self, fs, logical, parent=None, index=None):
@@ -430,6 +434,17 @@ class BtrfsNode:
 		else:
 			node = BtrfsNode(self.fs, self.keyobjs[0].blockptr, self, 0)
 			return node.first_key()
+
+
+	def last_key(self):
+		if(self.is_leaf):
+			keyobj = self.keyobjs[-1]
+			data = self.parse_item(keyobj)
+			return BtrfsItem(keyobj, data, self, self.num_items-1)
+
+		else:
+			node = BtrfsNode(self.fs, self.keyobjs[-1].blockptr, self, self.num_items-1)
+			return node.last_key()
 
 
 	def find_all(self):
@@ -709,6 +724,32 @@ class BtrfsNode:
 					return None
 
 				self.parent.next(self.index)
+
+
+	def prev(self, index):
+
+		if(self.is_leaf):
+			if(index > 0):
+				keyobj = self.keyobjs[index-1]
+				data = self.parse_item(keyobj)
+				return BtrfsItem(keyobj, data, self, index-1)
+
+			else:
+				if(not self.parent):
+					return None
+
+				return self.parent.prev(self.index)
+
+		else:
+			if(index > 0):
+				node = BtrfsNode(self.fs, self.keyobjs[index-1].blockptr, self, index-1)
+				return node.last_key()
+
+			else:
+				if(not self.parent):
+					return None
+
+				self.parent.prev(self.index)
 
 
 class Btrfs:
