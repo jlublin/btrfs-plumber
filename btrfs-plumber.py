@@ -159,9 +159,10 @@ if(__name__ == '__main__'):
 							extent_size = item.data.num_bytes
 							len = min(extent_size, size-x)
 							addr = fs.physical(item.data.disk_bytenr, len)
+							dev_id = next(iter(addr.keys()))
 
-							fs.dev0.seek(addr[fs.dev0_id])
-							data = fs.dev0.read(len)
+							fs.dev[dev_id].seek(addr[dev_id])
+							data = fs.dev[dev_id].read(len)
 							l = sys.stdout.buffer.write(data)
 							if(l != min(extent_size, size-x)):
 								raise Exception('!!!!!')
@@ -237,9 +238,10 @@ if(__name__ == '__main__'):
 					elif(extent.data.type == btrfs.FILE_EXTENT_REG):
 						extent_size = extent.data.disk_num_bytes
 						addr = fs.physical(extent.data.disk_bytenr, extent_size)
+						dev_id = next(iter(addr.keys()))
 
-						fs.dev0.seek(addr[fs.dev0_id])
-						data = fs.dev0.read(extent_size)
+						fs.dev[dev_id].seek(addr[dev_id])
+						data = fs.dev[dev_id].read(extent_size)
 
 						# Verify this extent
 						for i in range(extent_size // 4096):

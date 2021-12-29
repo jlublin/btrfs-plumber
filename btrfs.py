@@ -354,9 +354,8 @@ class BtrfsNode:
 
 	def __init__(self, fs, logical, parent=None, index=None):
 
-
 		self.fs = fs
-		self.data = self.fs.read_node(logical)
+		self.data, self.dev_id = self.fs.read_node(logical)
 		self.logical = logical
 		self.parent = parent
 		self.index = index
@@ -365,7 +364,7 @@ class BtrfsNode:
 
 		self.header = Header.parse_stream(stream)
 
-		self.data_root = stream.tell() + self.fs.physical(self.logical)[fs.dev0_id] # TODO: parse from self.data
+		self.data_root = stream.tell() + self.fs.physical(self.logical)[self.dev_id] # TODO: parse from self.data
 		self.num_items = self.header.nritems
 
 		self.is_leaf = (self.header.level == 0)
@@ -383,7 +382,7 @@ class BtrfsNode:
 	def first_key(self):
 		if(self.is_leaf):
 			keyobj = self.keyobjs[0]
-			data = self.fs.parse_item(keyobj, self.data_root)
+			data = self.fs.parse_item(keyobj, self.dev_id, self.data_root)
 			return BtrfsItem(keyobj, data, self, 0)
 
 		else:
@@ -422,7 +421,7 @@ class BtrfsNode:
 			if(c == 0):
 				if(self.is_leaf):
 					keyobj = self.keyobjs[i]
-					data = self.fs.parse_item(keyobj, self.data_root)
+					data = self.fs.parse_item(keyobj, self.dev_id, self.data_root)
 					return BtrfsItem(keyobj, data, self, i)
 				else:
 					node = BtrfsNode(self.fs, self.keyobjs[i].blockptr, self, i)
@@ -485,7 +484,7 @@ class BtrfsNode:
 
 
 					keyobj = self.keyobjs[i]
-					data = self.fs.parse_item(keyobj, self.data_root)
+					data = self.fs.parse_item(keyobj, self.dev_id, self.data_root)
 					return BtrfsItem(keyobj, data, self, i)
 
 				else:
@@ -552,7 +551,7 @@ class BtrfsNode:
 
 			if(self.is_leaf):
 				keyobj = self.keyobjs[i]
-				data = self.fs.parse_item(keyobj, self.data_root)
+				data = self.fs.parse_item(keyobj, self.dev_id, self.data_root)
 				item = BtrfsItem(keyobj, data, self, i)
 
 				c = compare_csum_keys(logical, item)
@@ -564,7 +563,7 @@ class BtrfsNode:
 			if(c == 0):
 				if(self.is_leaf):
 					keyobj = self.keyobjs[i]
-					data = self.fs.parse_item(keyobj, self.data_root)
+					data = self.fs.parse_item(keyobj, self.dev_id, self.data_root)
 					return BtrfsItem(keyobj, data, self, i)
 				else:
 					node = BtrfsNode(self.fs, self.keyobjs[i].blockptr, self, i)
@@ -646,7 +645,7 @@ class BtrfsNode:
 		if(self.is_leaf):
 			if(index < self.num_items - 1):
 				keyobj = self.keyobjs[index+1]
-				data = self.fs.parse_item(keyobj, self.data_root)
+				data = self.fs.parse_item(keyobj, self.dev_id, self.data_root)
 				return BtrfsItem(keyobj, data, self, index+1)
 
 			else:
@@ -666,6 +665,7 @@ class BtrfsNode:
 
 				self.parent.next(self.index)
 
+
 class Btrfs:
 
 	def __init__(self, devices):
@@ -684,7 +684,6 @@ class Btrfs:
 			self.dev_name[superblock.dev_item.devid] = dev
 
 			if(dev == self.dev0_name):
-				self.dev0 = f
 				self.dev0_id = superblock.dev_item.devid
 				self.superblock = superblock
 
@@ -753,27 +752,28 @@ class Btrfs:
 	def read_chunk_tree(self, chunk_root_logical):
 
 		physical = self.physical(chunk_root_logical)
+		dev_id = next(iter(physical.keys()))
 
-		self.dev0.seek(physical[self.dev0_id])
-		chunk_root_header = Header.parse_stream(self.dev0)
-		data_root = self.dev0.tell()
+		self.dev[dev_id].seek(physical[dev_id])
+		chunk_root_header = Header.parse_stream(self.dev[dev_id])
+		data_root = self.dev[dev_id].tell()
 
 		if(chunk_root_header.level == 0):
-			items = Item[chunk_root_header.nritems].parse_stream(self.dev0)
+			items = Item[chunk_root_header.nritems].parse_stream(self.dev[dev_id])
 			for item in items:
 
 				if(item.key.type != CHUNK_ITEM_KEY):
 					continue
 
 
-				self.dev0.seek(data_root + item.offset)
-				chunk = Chunk.parse_stream(self.dev0)
+				self.dev[dev_id].seek(data_root + item.offset)
+				chunk = Chunk.parse_stream(self.dev[dev_id])
 
 				self.chunk_tree_cache[(item.key.offset, chunk.length)] = \
 					{x.devid: x.offset for x in chunk.stripes}
 
 		else:
-			key_ptrs = KeyPtr[chunk_root_header.nritems].parse_stream(self.dev0)
+			key_ptrs = KeyPtr[chunk_root_header.nritems].parse_stream(self.dev[dev_id])
 			for key_ptr in key_ptrs:
 				read_chunk_tree(key_ptr.blockptr)
 
@@ -781,15 +781,16 @@ class Btrfs:
 	def read_tree_roots(self):
 
 		root_addr = self.physical(self.superblock.root)
+		dev_id = next(iter(root_addr.keys()))
 
-		self.dev0.seek(root_addr[self.dev0_id])
-		root_tree_root_header = Header.parse_stream(self.dev0)
-		data_root = self.dev0.tell()
+		self.dev[dev_id].seek(root_addr[dev_id])
+		root_tree_root_header = Header.parse_stream(self.dev[dev_id])
+		data_root = self.dev[dev_id].tell()
 
 		if(root_tree_root_header.level != 0):
 			raise Exception('Root tree root is not a leaf node')
 
-		items = Item[root_tree_root_header.nritems].parse_stream(self.dev0)
+		items = Item[root_tree_root_header.nritems].parse_stream(self.dev[dev_id])
 
 		for item in items:
 
@@ -798,27 +799,27 @@ class Btrfs:
 			if(item.key.type == ROOT_ITEM_KEY and
 			   item.key.objectid == FS_TREE_OBJECTID):
 
-				self.fs_tree = self.parse_item(item, data_root)
+				self.fs_tree = self.parse_item(item, dev_id, data_root)
 
 			elif(item.key.type == ROOT_ITEM_KEY and
 			     item.key.objectid == CSUM_TREE_OBJECTID):
 
-				self.csum_tree = self.parse_item(item, data_root)
+				self.csum_tree = self.parse_item(item, dev_id, data_root)
 
 			elif(item.key.type == ROOT_ITEM_KEY and
 			     item.key.objectid >= 256):
 
-				self.subvolume_trees[item.key.objectid] = self.parse_item(item, data_root)
+				self.subvolume_trees[item.key.objectid] = self.parse_item(item, dev_id, data_root)
 
 			elif(item.key.type == DIR_ITEM_KEY and
 			     item.key.objectid == ROOT_TREE_DIR_OBJECTID):
 
-				dir_item = self.parse_item(item, data_root)
+				dir_item = self.parse_item(item, dev_id, data_root)
 
 			elif(item.key.type == ROOT_ITEM_KEY and
 			     item.key.objectid == EXTENT_TREE_OBJECTID):
 
-				self.extent_tree = self.parse_item(item, data_root)
+				self.extent_tree = self.parse_item(item, dev_id, data_root)
 
 			else:
 				continue
@@ -827,12 +828,13 @@ class Btrfs:
 	def read_node(self, logical):
 
 		node_addr = self.physical(logical)
-		self.dev0.seek(node_addr[self.dev0_id])
+		dev_id = next(iter(node_addr.keys()))
+		self.dev[dev_id].seek(node_addr[dev_id])
 
-		return self.dev0.read(self.node_size)
+		return self.dev[dev_id].read(self.node_size), dev_id
 
 
-	def parse_item(self, item, data_root):
+	def parse_item(self, item, dev_id, data_root):
 
 		if(item.key.type == DIR_ITEM_KEY):
 			type = DirItem
@@ -865,8 +867,8 @@ class Btrfs:
 			raise Exception('Unknown type {} passed to parse_item()'.format(
 				item.key.type))
 
-		self.dev0.seek(data_root + item.offset)
-		payload_data = self.dev0.read(item.size)
+		self.dev[dev_id].seek(data_root + item.offset)
+		payload_data = self.dev[dev_id].read(item.size)
 		payload = type.parse(payload_data)
 
 		return payload
