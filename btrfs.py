@@ -701,7 +701,7 @@ class BtrfsNode:
 			if(item.key.objectid != prev.key.objectid):
 				break
 
-			item = prev()
+			item = prev
 
 		yield item
 
