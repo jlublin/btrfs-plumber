@@ -775,7 +775,7 @@ class Btrfs:
 		else:
 			key_ptrs = KeyPtr[chunk_root_header.nritems].parse_stream(self.dev[dev_id])
 			for key_ptr in key_ptrs:
-				read_chunk_tree(key_ptr.blockptr)
+				self.read_chunk_tree(key_ptr.blockptr)
 
 
 	def read_tree_roots(self):
