@@ -687,10 +687,23 @@ class BtrfsNode:
 
 		item = self.find_objectid(objectid)
 
-		if(item):
-			yield item
-		else:
+		if(not item):
 			return
+
+		# TODO: This is not the most efficient way of getting the first
+		#       item with objectid
+		while True:
+			prev = item.prev()
+
+			if(not prev):
+				break
+
+			if(item.key.objectid != prev.key.objectid):
+				break
+
+			item = prev()
+
+		yield item
 
 		while True:
 			item = item.next()
