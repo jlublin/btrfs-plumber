@@ -98,6 +98,7 @@ if(__name__ == '__main__'):
 			if(args[1] == 'inode'):
 				inode_nr = int(args[2])
 				key = Container(objectid=inode_nr, type=btrfs.INODE_ITEM_KEY, offset=0)
+				# TODO: only reads inode in root fs tree
 				inode = fs.find_key(fs.fs_tree.bytenr, key)
 
 				if(inode == None):
@@ -124,7 +125,7 @@ if(__name__ == '__main__'):
 				path = args[3]
 				item = fs.find_path(256, path.encode().split(b'/'))
 
-				node = btrfs.BtrfsNode(fs, fs.fs_tree.bytenr)
+				node = item.node
 				extents = node.find_all_objectid(item.key.objectid)
 
 				if(args[2] == 'info'):
@@ -205,7 +206,7 @@ if(__name__ == '__main__'):
 				path = args[2]
 				item = fs.find_path(256, path.encode().split(b'/'))
 
-				node = btrfs.BtrfsNode(fs, fs.fs_tree.bytenr)
+				node = item.node
 				extents = node.find_all_objectid(item.key.objectid)
 
 				x = 0
@@ -306,7 +307,7 @@ if(__name__ == '__main__'):
 				item = fs.find_path(256, path)
 
 				if(not item):
-					print('Item not found or subvolume (TODO)')
+					print('Item not found')
 					sys.exit(1)
 
 				inode_id = item.key.objectid

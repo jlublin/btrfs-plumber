@@ -1001,6 +1001,9 @@ class Btrfs:
 				if(current == logical_end):
 					break
 
+			if(current == logical_end):
+				break
+
 		if(current != logical_end):
 			raise Exception('Could not find all checksums!')
 
