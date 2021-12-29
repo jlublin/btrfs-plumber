@@ -929,12 +929,13 @@ class Btrfs:
 		return node.find(key)
 
 
-	def find_path(self, root_inode, path):
+	def find_path(self, root_inode, path, node=None):
 		# TODO:
 		# Where do I find root? use constant 256 for start (is this always true?)
-		# also add which tree (fs/subvolume)?
 
-		node = BtrfsNode(self, self.fs_tree.bytenr)
+		if(not node):
+			node = BtrfsNode(self, self.fs_tree.bytenr)
+
 		items = node.find_all_objectid(root_inode)
 
 		for item in items:
@@ -944,11 +945,26 @@ class Btrfs:
 
 			if(item.data.name == path[0]):
 
+				# Handle subvolumes specifically
+				if(item.data.location.type == ROOT_ITEM_KEY):
+					node = BtrfsNode(self, self.subvolume_trees[item.data.location.objectid].bytenr)
+
+					if(len(path) > 1):
+						return self.find_path(256, path[1:], node)
+
+					else:
+						key = Container(objectid=256,
+										type=INODE_ITEM_KEY,
+										offset=0)
+
+						inode_item = node.find(key)
+						return inode_item
+
 				# TODO: is this accessible by next/prev?
 				inode_item = node.find(item.data.location)
 
 				if(len(path) > 1):
-					return self.find_path(inode_item.key.objectid, path[1:])
+					return self.find_path(inode_item.key.objectid, path[1:], node)
 
 				else:
 					return inode_item
