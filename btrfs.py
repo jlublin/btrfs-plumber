@@ -376,7 +376,7 @@ class BtrfsNode:
 		else:
 			self.keyobjs = KeyPtr[self.num_items].parse_stream(stream)
 
-		# Parse items? No, takes unessecary time, store data
+		# Parse items? No, takes unneseccary time, store data
 
 
 	def first_key(self):
