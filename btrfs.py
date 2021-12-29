@@ -364,7 +364,7 @@ class BtrfsNode:
 
 		self.header = Header.parse_stream(stream)
 
-		self.data_root = stream.tell() + self.fs.physical(self.logical)[self.dev_id] # TODO: parse from self.data
+		self.data_root = stream.tell()
 		self.num_items = self.header.nritems
 
 		self.is_leaf = (self.header.level == 0)
@@ -379,10 +379,52 @@ class BtrfsNode:
 		# Parse items? No, takes unneseccary time, store data
 
 
+	def parse_item(self, item):
+
+		if(item.key.type == DIR_ITEM_KEY):
+			type = DirItem
+
+		elif(item.key.type == DIR_INDEX_KEY):
+			type = DirIndex
+
+		elif(item.key.type == INODE_REF_KEY):
+			type = InodeRef
+
+		elif(item.key.type == INODE_ITEM_KEY):
+			type = InodeItem
+
+		elif(item.key.type == ROOT_ITEM_KEY):
+			type = RootItem
+
+		elif(item.key.type == ROOT_REF_KEY):
+			type = RootRef
+
+		elif(item.key.type == ROOT_BACKREF_KEY):
+			type = RootBackRef
+
+		elif(item.key.type == EXTENT_DATA_KEY):
+			type = FileExtentItem
+
+		elif(item.key.type == EXTENT_CSUM_KEY):
+			type = CsumItem
+
+		else:
+			raise Exception('Unknown type {} passed to parse_item()'.format(
+				item.key.type))
+
+		stream = io.BytesIO(self.data)
+		stream.seek(self.data_root + item.offset)
+
+		payload_data = stream.read(item.size)
+		payload = type.parse(payload_data)
+
+		return payload
+
+
 	def first_key(self):
 		if(self.is_leaf):
 			keyobj = self.keyobjs[0]
-			data = self.fs.parse_item(keyobj, self.dev_id, self.data_root)
+			data = self.parse_item(keyobj)
 			return BtrfsItem(keyobj, data, self, 0)
 
 		else:
@@ -421,7 +463,7 @@ class BtrfsNode:
 			if(c == 0):
 				if(self.is_leaf):
 					keyobj = self.keyobjs[i]
-					data = self.fs.parse_item(keyobj, self.dev_id, self.data_root)
+					data = self.parse_item(keyobj)
 					return BtrfsItem(keyobj, data, self, i)
 				else:
 					node = BtrfsNode(self.fs, self.keyobjs[i].blockptr, self, i)
@@ -484,7 +526,7 @@ class BtrfsNode:
 
 
 					keyobj = self.keyobjs[i]
-					data = self.fs.parse_item(keyobj, self.dev_id, self.data_root)
+					data = self.parse_item(keyobj)
 					return BtrfsItem(keyobj, data, self, i)
 
 				else:
@@ -551,7 +593,7 @@ class BtrfsNode:
 
 			if(self.is_leaf):
 				keyobj = self.keyobjs[i]
-				data = self.fs.parse_item(keyobj, self.dev_id, self.data_root)
+				data = self.parse_item(keyobj)
 				item = BtrfsItem(keyobj, data, self, i)
 
 				c = compare_csum_keys(logical, item)
@@ -563,7 +605,7 @@ class BtrfsNode:
 			if(c == 0):
 				if(self.is_leaf):
 					keyobj = self.keyobjs[i]
-					data = self.fs.parse_item(keyobj, self.dev_id, self.data_root)
+					data = self.parse_item(keyobj)
 					return BtrfsItem(keyobj, data, self, i)
 				else:
 					node = BtrfsNode(self.fs, self.keyobjs[i].blockptr, self, i)
@@ -645,7 +687,7 @@ class BtrfsNode:
 		if(self.is_leaf):
 			if(index < self.num_items - 1):
 				keyobj = self.keyobjs[index+1]
-				data = self.fs.parse_item(keyobj, self.dev_id, self.data_root)
+				data = self.parse_item(keyobj)
 				return BtrfsItem(keyobj, data, self, index+1)
 
 			else:
