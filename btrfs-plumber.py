@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from construct import *
 
 STATE_FILE = 'btrfs_plumber_state'
