@@ -693,7 +693,7 @@ class Btrfs:
 
 		self.read_chunk_tree(self.superblock.chunk_root)
 
-		self.read_tree_roots()
+		self.read_tree_roots(self.superblock.root)
 
 
 	def bootstrap_chunk_tree(self):
@@ -778,51 +778,55 @@ class Btrfs:
 				self.read_chunk_tree(key_ptr.blockptr)
 
 
-	def read_tree_roots(self):
+	def read_tree_roots(self, root_logical):
 
-		root_addr = self.physical(self.superblock.root)
+		root_addr = self.physical(root_logical)
 		dev_id = next(iter(root_addr.keys()))
 
 		self.dev[dev_id].seek(root_addr[dev_id])
 		root_tree_root_header = Header.parse_stream(self.dev[dev_id])
 		data_root = self.dev[dev_id].tell()
 
-		if(root_tree_root_header.level != 0):
-			raise Exception('Root tree root is not a leaf node')
+		# NOTE: Apparently the root tree may use non-leaf nodes in contrast to
+		#       some documentation I found earlier
 
-		items = Item[root_tree_root_header.nritems].parse_stream(self.dev[dev_id])
+		if(root_tree_root_header.level == 0):
+			items = Item[root_tree_root_header.nritems].parse_stream(self.dev[dev_id])
 
-		for item in items:
+			for item in items:
 
-#			print('Root tree item:', item.key.type, item.key.objectid)
+				if(item.key.type == ROOT_ITEM_KEY and
+				   item.key.objectid == FS_TREE_OBJECTID):
 
-			if(item.key.type == ROOT_ITEM_KEY and
-			   item.key.objectid == FS_TREE_OBJECTID):
+					self.fs_tree = self.parse_item(item, dev_id, data_root)
 
-				self.fs_tree = self.parse_item(item, dev_id, data_root)
+				elif(item.key.type == ROOT_ITEM_KEY and
+					 item.key.objectid == CSUM_TREE_OBJECTID):
 
-			elif(item.key.type == ROOT_ITEM_KEY and
-			     item.key.objectid == CSUM_TREE_OBJECTID):
+					self.csum_tree = self.parse_item(item, dev_id, data_root)
 
-				self.csum_tree = self.parse_item(item, dev_id, data_root)
+				elif(item.key.type == ROOT_ITEM_KEY and
+					 item.key.objectid >= 256):
 
-			elif(item.key.type == ROOT_ITEM_KEY and
-			     item.key.objectid >= 256):
+					self.subvolume_trees[item.key.objectid] = self.parse_item(item, dev_id, data_root)
 
-				self.subvolume_trees[item.key.objectid] = self.parse_item(item, dev_id, data_root)
+				elif(item.key.type == DIR_ITEM_KEY and
+					 item.key.objectid == ROOT_TREE_DIR_OBJECTID):
 
-			elif(item.key.type == DIR_ITEM_KEY and
-			     item.key.objectid == ROOT_TREE_DIR_OBJECTID):
+					dir_item = self.parse_item(item, dev_id, data_root)
 
-				dir_item = self.parse_item(item, dev_id, data_root)
+				elif(item.key.type == ROOT_ITEM_KEY and
+					 item.key.objectid == EXTENT_TREE_OBJECTID):
 
-			elif(item.key.type == ROOT_ITEM_KEY and
-			     item.key.objectid == EXTENT_TREE_OBJECTID):
+					self.extent_tree = self.parse_item(item, dev_id, data_root)
 
-				self.extent_tree = self.parse_item(item, dev_id, data_root)
+				else:
+					continue
 
-			else:
-				continue
+		else:
+			key_ptrs = KeyPtr[root_tree_root_header.nritems].parse_stream(self.dev[dev_id])
+			for key_ptr in key_ptrs:
+				self.read_tree_roots(key_ptr.blockptr)
 
 
 	def read_node(self, logical):
