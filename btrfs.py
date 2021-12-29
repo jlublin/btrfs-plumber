@@ -993,7 +993,7 @@ class Btrfs:
 
 	def list_files(self):
 
-		node = BtrfsNode(btrfs, btrfs.fs_tree.bytenr)
+		node = BtrfsNode(self, self.fs_tree.bytenr)
 		items = node.find_all()
 
 		for item in node.find_all():
