@@ -637,7 +637,7 @@ class BtrfsNode:
 
 				upper = i - 1
 
-				if(upper < lower)
+				if(upper < lower):
 					lower = upper
 
 			else:
