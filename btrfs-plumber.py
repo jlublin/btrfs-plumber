@@ -292,6 +292,22 @@ if(__name__ == '__main__'):
 						print('Checksum @logical {} @disk {} : {} ERROR, mismatch: 0x{:02x}'
 						      .format(logical, disk, addr_map[disk], block_csum))
 
+			elif(args[1] == 'node'):
+
+				logical = int(args[2])
+				node = btrfs.BtrfsNode(fs, logical)
+
+				# Read node header -> csum
+				node_data = node.data
+				csum = crc32c.crc32c(node_data[btrfs.CSUM_SIZE:])
+				node_csum = Int32ul.parse(node_data[0:btrfs.CSUM_SIZE])
+
+				if(csum != node_csum):
+					print('Checksum error, {} != {}'.format(
+						csum, node_csum))
+				else:
+					print('Node checksum @{} OK'.format(node.logical))
+
 
 
 		elif(args[0] == 'ls'):
