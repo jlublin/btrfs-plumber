@@ -736,7 +736,7 @@ class BtrfsNode:
 				if(not self.parent):
 					return None
 
-				self.parent.next(self.index)
+				return self.parent.next(self.index)
 
 
 	def prev(self, index):
