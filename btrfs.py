@@ -762,7 +762,7 @@ class BtrfsNode:
 				if(not self.parent):
 					return None
 
-				self.parent.prev(self.index)
+				return self.parent.prev(self.index)
 
 
 class Btrfs:
