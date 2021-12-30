@@ -111,15 +111,19 @@ if(__name__ == '__main__'):
 
 			elif(args[1] == 'csum'):
 				logical = int(args[2])
-				key = Container(objectid=btrfs.EXTENT_CSUM_OBJECTID, type=btrfs.EXTENT_CSUM_KEY, offset=logical)
-				result = fs.find_key(fs.csum_tree.bytenr, key)
+				node = btrfs.BtrfsNode(fs, fs.csum_tree.bytenr)
+				csum = node.find_csum(logical)
 
-				if(result == None):
+				if(csum == None):
 					print('Csum not found')
 					sys.exit(1)
 
-				print(result.item)
-				print(result.data)
+				index = (logical - csum.item.key.offset)//4096
+				print('Checksum: {} @logical {} @node {}'.format(
+					csum.data.csum[index],
+					csum.node.logical + csum.node.data_root + csum.offset + index*4,
+					csum.node.logical))
+
 
 			elif(args[1] == 'path'):
 				path = args[3]
